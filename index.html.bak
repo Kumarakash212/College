@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Scraper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    .spinner { 
+      border: 4px solid rgba(0, 0, 0, 0.1); 
+      border-left-color: #3b82f6;
+      border-radius: 50%; 
+      width: 24px; 
+      height: 24px;
+      animation: spin 1s linear infinite; 
+      display: none; 
+    }
+    @keyframes spin { 
+      to { transform: rotate(360deg); } 
+    }
+    #logs { 
+      max-height: 300px; 
+      overflow-y: auto; 
+    }
+    .email-item, .log-item { 
+      word-break: break-all; 
+    }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div class="container mx-auto p-4 max-w-3xl">
+    <h1 class="text-3xl font-bold text-center mb-6">Email Scraper</h1>
+    <form id="scrape-form" class="mb-6">
+      <div class="flex flex-col sm:flex-row gap-2">
+        <input type="text" id="url" name="url"
+          placeholder="Enter website URL (e.g., https://example.com)"
+          class="flex-grow p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+        <button type="submit"
+          class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 flex items-center gap-2">
+          <span>Scrape Emails</span>
+          <div id="spinner" class="spinner"></div>
+        </button>
+      </div>
+    </form>
+    <div id="status" class="text-center text-blue-600 mb-4"></div>
+    <div id="logs" class="bg-white p-4 rounded-md shadow mb-4"></div>
+    <button id="copy-button"
+      class="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 hidden mb-4"
+      onclick="copyEmails()">Copy Emails to Clipboard</button>
+    <div id="emails" class="bg-white p-4 rounded-md shadow"></div>
+  </div>
+  <script>
+    const socket = io('/crawl');
+    const form = document.getElementById('scrape-form');
+    const statusDiv = document.getElementById('status');
+    const emailsDiv = document.getElementById('emails');
+    const logsDiv = document.getElementById('logs');
+    const copyButton = document.getElementById('copy-button');
+    const spinner = document.getElementById('spinner');
+
+    socket.on('progress', (data) => {
+      const logItem = document.createElement('div');
+      logItem.className = 'log-item p-2 border-b last:border-b-0 text-sm';
+      logItem.textContent = data.message;
+      logsDiv.appendChild(logItem);
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+
+      if (data.message.includes('Crawling completed')) {
+        spinner.style.display = 'none';
+        statusDiv.textContent = data.message;
+        fetchResults(data.session_id);
+      }
+    });
+
+    async function fetchResults(sessionId) {
+      try {
+        const response = await fetch('/results/' + sessionId);
+        const data = await response.json();
+        emailsDiv.innerHTML = data.emails.map(email =>
+          `<div class="email-item p-2 border-b last:border-b-0">${email}</div>`).join('');
+        if (data.emails.length > 0) {
+          copyButton.classList.remove('hidden');
+          statusDiv.textContent = `Found ${data.emails.length} emails.`;
+        } else {
+          statusDiv.textContent = 'Crawling completed: No emails found.';
+        }
+      } catch (error) {
+        statusDiv.textContent = 'Error fetching results: ' + error.message;
+        spinner.style.display = 'none';
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('url').value;
+      statusDiv.textContent = 'Starting crawl...';
+      emailsDiv.innerHTML = '';
+      logsDiv.innerHTML = '';
+      copyButton.classList.add('hidden');
+      spinner.style.display = 'block';
+
+      try {
+        const response = await fetch('/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `url=${encodeURIComponent(url)}`
+        });
+        const data = await response.json();
+        if (data.error) {
+          statusDiv.textContent = data.error;
+          spinner.style.display = 'none';
+        }
+      } catch (error) {
+        statusDiv.textContent = 'Error: ' + error.message;
+        spinner.style.display = 'none';
+      }
+    });
+
+    function copyEmails() {
+      const emails = Array.from(document.querySelectorAll('.email-item'))
+        .map(el => el.textContent).join('\n');
+      navigator.clipboard.writeText(emails).then(() => {
+        alert('Emails copied to clipboard!');
+      }).catch(err => {
+        alert('Failed to copy emails: ' + err);
+      });
+    }
+  </script>
+</body>
+</html>

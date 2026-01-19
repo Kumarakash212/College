@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Scraper - Cyber Terminal</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    body {
+      background: #0d1117;
+      color: #00ff00;
+      font-family: 'Courier New', Courier, monospace;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .container {
+      max-width: 900px;
+      width: 100%;
+      background: #1c2526;
+      border: 2px solid #00ff00;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+    }
+    h1 {
+      text-align: center;
+      color: #00ff00;
+      text-shadow: 0 0 5px #00ff00;
+      font-size: 2.5em;
+      margin-bottom: 20px;
+    }
+    form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    input[type="text"] {
+      flex-grow: 1;
+      background: #0d1117;
+      border: 1px solid #00ff00;
+      color: #00ff00;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 1em;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      box-shadow: 0 0 10px #00ff00;
+    }
+    button {
+      background: #00ff00;
+      color: #0d1117;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 1em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #00cc00;
+      box-shadow: 0 0 10px #00ff00;
+    }
+    .spinner {
+      border: 4px solid rgba(0, 255, 0, 0.3);
+      border-left-color: #00ff00;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+      display: none;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    #status {
+      text-align: center;
+      color: #39ff14;
+      margin-bottom: 20px;
+      font-size: 1.1em;
+    }
+    #logs {
+      background: #0d1117;
+      border: 1px solid #00ff00;
+      border-radius: 4px;
+      padding: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+      font-size: 0.9em;
+    }
+    .log-item {
+      border-bottom: 1px solid #333;
+      padding: 8px 0;
+      word-break: break-all;
+    }
+    .log-item:last-child {
+      border-bottom: none;
+    }
+    #copy-button {
+      background: #6a0dad;
+      color: #ffffff;
+      display: none;
+      margin: 0 auto 20px;
+    }
+    #copy-button:hover {
+      background: #51087e;
+      box-shadow: 0 0 10px #6a0dad;
+    }
+    #emails {
+      background: #0d1117;
+      border: 1px solid #00ff00;
+      border-radius: 4px;
+      padding: 15px;
+      font-size: 0.9em;
+    }
+    .email-item {
+      border-bottom: 1px solid #333;
+      padding: 8px 0;
+      word-break: break-all;
+      color: #39ff14;
+    }
+    .email-item:last-child {
+      border-bottom: none;
+    }
+    footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #666;
+      font-size: 0.8em;
+    }
+    footer a {
+      color: #00ff00;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+    @media (max-width: 600px) {
+      .container {
+        padding: 10px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+      form {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Email Scraper - Cyber Terminal</h1>
+    <form id="scrape-form">
+      <input type="text" id="url" name="url" placeholder="Enter target URL (e.g., https://example.com)" required>
+      <button type="submit">
+        <span>Execute Scrape</span>
+        <div id="spinner" class="spinner"></div>
+      </button>
+    </form>
+    <div id="status"></div>
+    <div id="logs"></div>
+    <button id="copy-button" onclick="copyEmails()">Copy Emails to Clipboard</button>
+    <div id="emails"></div>
+    <footer>
+      Powered by <a href="https://github.com/Kgsflink" target="_blank">Kgsflink</a>
+    </footer>
+  </div>
+  <script>
+    const socket = io('/crawl');
+    const form = document.getElementById('scrape-form');
+    const statusDiv = document.getElementById('status');
+    const emailsDiv = document.getElementById('emails');
+    const logsDiv = document.getElementById('logs');
+    const copyButton = document.getElementById('copy-button');
+    const spinner = document.getElementById('spinner');
+
+    socket.on('progress', (data) => {
+      const logItem = document.createElement('div');
+      logItem.className = 'log-item';
+      logItem.textContent = `> ${data.message}`;
+      logsDiv.appendChild(logItem);
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+
+      if (data.message.includes('Crawling completed')) {
+        spinner.style.display = 'none';
+        statusDiv.textContent = data.message;
+        fetchResults(data.session_id);
+      }
+    });
+
+    async function fetchResults(sessionId) {
+      try {
+        const response = await fetch('/results/' + sessionId);
+        const data = await response.json();
+        emailsDiv.innerHTML = data.emails.map(email =>
+          `<div class="email-item">${email}</div>`).join('');
+        if (data.emails.length > 0) {
+          copyButton.style.display = 'block';
+          statusDiv.textContent = `> Found ${data.emails.length} emails.`;
+        } else {
+          statusDiv.textContent = '> Crawling completed: No emails found.';
+        }
+      } catch (error) {
+        statusDiv.textContent = `> Error fetching results: ${error.message}`;
+        spinner.style.display = 'none';
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('url').value;
+      statusDiv.textContent = '> Initializing crawl...';
+      emailsDiv.innerHTML = '';
+      logsDiv.innerHTML = '';
+      copyButton.style.display = 'none';
+      spinner.style.display = 'block';
+
+      try {
+        const response = await fetch('/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `url=${encodeURIComponent(url)}`
+        });
+        const data = await response.json();
+        if (data.error) {
+          statusDiv.textContent = `> Error: ${data.error}`;
+          spinner.style.display = 'none';
+        }
+      } catch (error) {
+        statusDiv.textContent = `> Error: ${error.message}`;
+        spinner.style.display = 'none';
+      }
+    });
+
+    function copyEmails() {
+      const emails = Array.from(document.querySelectorAll('.email-item'))
+        .map(el => el.textContent).join('\n');
+      navigator.clipboard.writeText(emails).then(() => {
+        alert('Emails copied to clipboard!');
+      }).catch(err => {
+        alert('Failed to copy emails: ' + err);
+      });
+    }
+  </script>
+</body>
+</html>
